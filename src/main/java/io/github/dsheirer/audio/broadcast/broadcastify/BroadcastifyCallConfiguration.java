@@ -46,6 +46,7 @@ public class BroadcastifyCallConfiguration extends BroadcastConfiguration
     private StringProperty mApiKey = new SimpleStringProperty();
     private BooleanProperty mTestEnabled= new SimpleBooleanProperty(false);
     private IntegerProperty mTestInterval = new SimpleIntegerProperty(15);
+    private BooleanProperty mSendDuplicatesToAllTalkgroups = new SimpleBooleanProperty(true);
 
     /**
      * Constructor for faster jackson
@@ -158,6 +159,20 @@ public class BroadcastifyCallConfiguration extends BroadcastConfiguration
     public void setTestInterval(int interval)
     {
         mTestInterval.set(interval);
+    }
+
+    /**
+     * Indicates if this instance should send recordings flagged as duplicates to all talkgroups or only the first
+     */
+    @JacksonXmlProperty(isAttribute = true, localName = "send_duplicates_to_all_talkgroups")
+    public boolean isSendDuplicatesToAllTalkgroups()
+    {
+        return mSendDuplicatesToAllTalkgroups.get();
+    }
+
+    public void setSendDuplicatesToAllTalkgroups(boolean enabled)
+    {
+        mSendDuplicatesToAllTalkgroups.set(enabled);
     }
 
     @Override
