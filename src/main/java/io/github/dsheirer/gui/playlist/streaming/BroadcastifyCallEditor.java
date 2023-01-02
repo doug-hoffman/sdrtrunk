@@ -50,6 +50,7 @@ public class BroadcastifyCallEditor extends AbstractBroadcastEditor<Broadcastify
     private GridPane mEditorPane;
     private ToggleSwitch mTestEnabledToggleSwitch;
     private IntegerTextField mTestIntervalTextField;
+    private ToggleSwitch mSendDuplicatesToAllTalkgroupsToggleSwitch;
 
     /**
      * Constructs an instance
@@ -71,6 +72,7 @@ public class BroadcastifyCallEditor extends AbstractBroadcastEditor<Broadcastify
         getMaxAgeTextField().setDisable(item == null);
         getTestEnabledToggleSwitch().setDisable(item == null);
         getTestIntervalTextField().setDisable(item == null);
+        getSendDuplicatesToAllTalkgroupsToggleSwitch().setDisable(item == null);
 
         if(item != null)
         {
@@ -80,6 +82,7 @@ public class BroadcastifyCallEditor extends AbstractBroadcastEditor<Broadcastify
             getMaxAgeTextField().set((int)(item.getMaximumRecordingAge() / 1000));
             getTestEnabledToggleSwitch().setSelected(item.isTestEnabled());
             getTestIntervalTextField().set(item.getTestInterval());
+            getSendDuplicatesToAllTalkgroupsToggleSwitch().setSelected(item.isSendDuplicatesToAllTalkgroups());
         }
         else
         {
@@ -89,6 +92,7 @@ public class BroadcastifyCallEditor extends AbstractBroadcastEditor<Broadcastify
             getMaxAgeTextField().set(0);
             getTestEnabledToggleSwitch().setSelected(false);
             getTestIntervalTextField().set(15);
+            getSendDuplicatesToAllTalkgroupsToggleSwitch().setSelected(true);
         }
 
         modifiedProperty().set(false);
@@ -111,6 +115,7 @@ public class BroadcastifyCallEditor extends AbstractBroadcastEditor<Broadcastify
             getItem().setMaximumRecordingAge(getMaxAgeTextField().get() * 1000);
             getItem().setTestEnabled(getTestEnabledToggleSwitch().isSelected());
             getItem().setTestInterval(getTestIntervalTextField().get());
+            getItem().setSendDuplicatesToAllTalkgroups(getSendDuplicatesToAllTalkgroupsToggleSwitch().isSelected());
         }
 
         super.save();
@@ -204,6 +209,22 @@ public class BroadcastifyCallEditor extends AbstractBroadcastEditor<Broadcastify
             GridPane.setConstraints(getTestIntervalTextField(), 4, row);
             mEditorPane.getChildren().add(getTestIntervalTextField());
 
+            Label sendDuplicatesToAllTalkgroupsLabel = new Label("Send duplicate calls to all associated talkgroups");
+            GridPane.setHalignment(sendDuplicatesToAllTalkgroupsLabel, HPos.RIGHT);
+            GridPane.setConstraints(sendDuplicatesToAllTalkgroupsLabel, 0, ++row);
+            mEditorPane.getChildren().add(sendDuplicatesToAllTalkgroupsLabel);
+
+            GridPane.setConstraints(getSendDuplicatesToAllTalkgroupsToggleSwitch(), 1, row);
+            mEditorPane.getChildren().add(getSendDuplicatesToAllTalkgroupsToggleSwitch());
+
+            Label sendDuplicatesToAllTalkgroupsWarning = new Label("Note: If disabled, each duplicate call will only be sent to " +
+                "the first talkgroup it was seen on, which can be inconsistent. To make sure you hear the call when listening to " +
+                "a single talkgroup that includes the call, enable this option to upload a copy to every associated talkgroup.");
+            sendDuplicatesToAllTalkgroupsWarning.setWrapText(true);
+            GridPane.setHalignment(sendDuplicatesToAllTalkgroupsWarning, HPos.LEFT);
+            GridPane.setConstraints(sendDuplicatesToAllTalkgroupsWarning, 0, ++row, 5, 1);
+            mEditorPane.getChildren().add(sendDuplicatesToAllTalkgroupsWarning);
+
             GridPane.setConstraints(getTestButton(), 1, ++row);
             mEditorPane.getChildren().add(getTestButton());
         }
@@ -282,6 +303,19 @@ public class BroadcastifyCallEditor extends AbstractBroadcastEditor<Broadcastify
         }
 
         return mTestIntervalTextField;
+    }
+
+    private ToggleSwitch getSendDuplicatesToAllTalkgroupsToggleSwitch()
+    {
+        if(mSendDuplicatesToAllTalkgroupsToggleSwitch == null)
+        {
+            mSendDuplicatesToAllTalkgroupsToggleSwitch = new ToggleSwitch();
+            mSendDuplicatesToAllTalkgroupsToggleSwitch.setDisable(true);
+            mSendDuplicatesToAllTalkgroupsToggleSwitch.selectedProperty()
+                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+        }
+
+        return mSendDuplicatesToAllTalkgroupsToggleSwitch;
     }
 
     private Button getTestButton()

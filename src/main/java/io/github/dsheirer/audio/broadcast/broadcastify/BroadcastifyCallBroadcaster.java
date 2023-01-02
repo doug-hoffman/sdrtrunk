@@ -19,6 +19,7 @@
 
 package io.github.dsheirer.audio.broadcast.broadcastify;
 
+import com.google.common.base.Joiner;
 import com.google.common.net.HttpHeaders;
 import io.github.dsheirer.alias.AliasModel;
 import io.github.dsheirer.audio.broadcast.AbstractAudioBroadcaster;
@@ -48,6 +49,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.CompletionException;
@@ -245,140 +247,147 @@ public class BroadcastifyCallBroadcaster extends AbstractAudioBroadcaster<Broadc
             {
                 float durationSeconds = (float)(audioRecording.getRecordingLength() / 1E3f);
                 long timestampSeconds = (int)(audioRecording.getStartTime() / 1E3);
-                String talkgroup = getTo(audioRecording);
                 String radioId = getFrom(audioRecording);
                 float frequency = getFrequency(audioRecording);
 
-                BroadcastifyCallBuilder bodyBuilder = new BroadcastifyCallBuilder();
-                bodyBuilder.addPart(FormField.API_KEY, getBroadcastConfiguration().getApiKey())
-                    .addPart(FormField.SYSTEM_ID, getBroadcastConfiguration().getSystemID())
-                    .addPart(FormField.CALL_DURATION, durationSeconds)
-                    .addPart(FormField.TIMESTAMP, timestampSeconds)
-                    .addPart(FormField.TALKGROUP_ID, talkgroup)
-                    .addPart(FormField.RADIO_ID, radioId)
-                    .addPart(FormField.FREQUENCY, frequency)
-                    .addPart(FormField.ENCODING, ENCODING_TYPE_MP3);
-
-                try
+                /**
+                 * The API documentation states that we can send a comma delimited list of talkgroups,
+                 * however, that doesn't seem to result in the recording being available on all of the
+                 * talkgroups. To get the recording on each talkgroup, we need to submit it once for each.
+                 */
+                for (String talkgroup: getTo(audioRecording, getBroadcastConfiguration().isSendDuplicatesToAllTalkgroups()))
                 {
-                    HttpRequest request = HttpRequest.newBuilder()
-                        .uri(URI.create(getBroadcastConfiguration().getHost()))
-                        .header(HttpHeaders.CONTENT_TYPE, MULTIPART_FORM_DATA + "; boundary=" + bodyBuilder.getBoundary())
-                        .header(HttpHeaders.USER_AGENT, "sdrtrunk")
-                        .header(HttpHeaders.ACCEPT, "*/*")
-                        .POST(bodyBuilder.build())
-                        .build();
+                    BroadcastifyCallBuilder bodyBuilder = new BroadcastifyCallBuilder();
+                    bodyBuilder.addPart(FormField.API_KEY, getBroadcastConfiguration().getApiKey())
+                        .addPart(FormField.SYSTEM_ID, getBroadcastConfiguration().getSystemID())
+                        .addPart(FormField.CALL_DURATION, durationSeconds)
+                        .addPart(FormField.TIMESTAMP, timestampSeconds)
+                        .addPart(FormField.TALKGROUP_ID, talkgroup)
+                        .addPart(FormField.RADIO_ID, radioId)
+                        .addPart(FormField.FREQUENCY, frequency)
+                        .addPart(FormField.ENCODING, ENCODING_TYPE_MP3);
 
-                    mHttpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                        .whenComplete((stringHttpResponse, throwable) -> {
-                            if(throwable != null || stringHttpResponse.statusCode() != 200)
-                            {
-                                if(throwable instanceof IOException || throwable instanceof CompletionException)
+                    try
+                    {
+                        HttpRequest request = HttpRequest.newBuilder()
+                            .uri(URI.create(getBroadcastConfiguration().getHost()))
+                            .header(HttpHeaders.CONTENT_TYPE, MULTIPART_FORM_DATA + "; boundary=" + bodyBuilder.getBoundary())
+                            .header(HttpHeaders.USER_AGENT, "sdrtrunk")
+                            .header(HttpHeaders.ACCEPT, "*/*")
+                            .POST(bodyBuilder.build())
+                            .build();
+
+                        mHttpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                            .whenComplete((stringHttpResponse, throwable) -> {
+                                if(throwable != null || stringHttpResponse.statusCode() != 200)
                                 {
-                                    //We get socket reset exceptions occasionally when the remote server doesn't
-                                    //fully read our request and immediately responds.
-                                }
-                                else
-                                {
-                                    mLog.error("Error while sending upload URL request" + throwable.getLocalizedMessage());
-                                    setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
-                                }
-                                incrementErrorAudioCount();
-                                broadcast(new BroadcastEvent(BroadcastifyCallBroadcaster.this,
-                                    BroadcastEvent.Event.BROADCASTER_ERROR_COUNT_CHANGE));
-                            }
-                            else
-                            {
-                                String urlResponse = stringHttpResponse.body();
-
-                                if(urlResponse.startsWith("0 "))
-                                {
-                                    HttpRequest.BodyPublisher filePublisher = null;
-
-                                    try
+                                    if(throwable instanceof IOException || throwable instanceof CompletionException)
                                     {
-                                        filePublisher = HttpRequest.BodyPublishers.ofFile(audioRecording.getPath());
-                                    }
-                                    catch(FileNotFoundException fnfe)
-                                    {
-                                        mLog.error("Broadcastify calls API - audio recording file not found - ignoring upload");
-                                    }
-
-                                    if(filePublisher != null)
-                                    {
-                                        HttpRequest fileRequest = HttpRequest.newBuilder()
-                                            .uri(URI.create(urlResponse.substring(2)))
-                                            .header(HttpHeaders.USER_AGENT, "sdrtrunk")
-                                            .header(HttpHeaders.CONTENT_TYPE, "audio/mpeg")
-                                            .PUT(filePublisher)
-                                            .build();
-
-                                        mHttpClient.sendAsync(fileRequest, HttpResponse.BodyHandlers.ofString())
-                                            .whenComplete((fileResponse, throwable1) -> {
-                                                if(throwable1 != null || fileResponse.statusCode() != 200)
-                                                {
-                                                    if(throwable1 instanceof IOException || throwable1 instanceof CompletionException)
-                                                    {
-                                                        //We get socket reset exceptions occasionally when the remote server doesn't
-                                                        //fully read our request and immediately responds.
-                                                    }
-                                                    else
-                                                    {
-                                                        setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
-                                                        mLog.error("Broadcastify calls API file upload fail [" +
-                                                            fileResponse.statusCode() + "] response [" +
-                                                            fileResponse.body() + "]");
-                                                    }
-
-                                                    incrementErrorAudioCount();
-                                                    broadcast(new BroadcastEvent(BroadcastifyCallBroadcaster.this,
-                                                        BroadcastEvent.Event.BROADCASTER_ERROR_COUNT_CHANGE));
-                                                }
-                                                else
-                                                {
-                                                    incrementStreamedAudioCount();
-                                                    broadcast(new BroadcastEvent(BroadcastifyCallBroadcaster.this,
-                                                        BroadcastEvent.Event.BROADCASTER_STREAMED_COUNT_CHANGE));
-                                                }
-
-                                                audioRecording.removePendingReplay();
-                                            });
+                                        //We get socket reset exceptions occasionally when the remote server doesn't
+                                        //fully read our request and immediately responds.
                                     }
                                     else
                                     {
-                                        //Register an error for the file not found exception
-                                        mLog.error("Broadcastify calls API - upload file not found [" +
-                                            audioRecording.getPath().toString() + "]");
+                                        mLog.error("Error while sending upload URL request" + throwable.getLocalizedMessage());
+                                        setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
+                                    }
+                                    incrementErrorAudioCount();
+                                    broadcast(new BroadcastEvent(BroadcastifyCallBroadcaster.this,
+                                        BroadcastEvent.Event.BROADCASTER_ERROR_COUNT_CHANGE));
+                                }
+                                else
+                                {
+                                    String urlResponse = stringHttpResponse.body();
+
+                                    if(urlResponse.startsWith("0 "))
+                                    {
+                                        HttpRequest.BodyPublisher filePublisher = null;
+
+                                        try
+                                        {
+                                            filePublisher = HttpRequest.BodyPublishers.ofFile(audioRecording.getPath());
+                                        }
+                                        catch(FileNotFoundException fnfe)
+                                        {
+                                            mLog.error("Broadcastify calls API - audio recording file not found - ignoring upload");
+                                        }
+
+                                        if(filePublisher != null)
+                                        {
+                                            HttpRequest fileRequest = HttpRequest.newBuilder()
+                                                .uri(URI.create(urlResponse.substring(2)))
+                                                .header(HttpHeaders.USER_AGENT, "sdrtrunk")
+                                                .header(HttpHeaders.CONTENT_TYPE, "audio/mpeg")
+                                                .PUT(filePublisher)
+                                                .build();
+
+                                            mHttpClient.sendAsync(fileRequest, HttpResponse.BodyHandlers.ofString())
+                                                .whenComplete((fileResponse, throwable1) -> {
+                                                    if(throwable1 != null || fileResponse.statusCode() != 200)
+                                                    {
+                                                        if(throwable1 instanceof IOException || throwable1 instanceof CompletionException)
+                                                        {
+                                                            //We get socket reset exceptions occasionally when the remote server doesn't
+                                                            //fully read our request and immediately responds.
+                                                        }
+                                                        else
+                                                        {
+                                                            setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
+                                                            mLog.error("Broadcastify calls API file upload fail [" +
+                                                                fileResponse.statusCode() + "] response [" +
+                                                                fileResponse.body() + "]");
+                                                        }
+
+                                                        incrementErrorAudioCount();
+                                                        broadcast(new BroadcastEvent(BroadcastifyCallBroadcaster.this,
+                                                            BroadcastEvent.Event.BROADCASTER_ERROR_COUNT_CHANGE));
+                                                    }
+                                                    else
+                                                    {
+                                                        incrementStreamedAudioCount();
+                                                        broadcast(new BroadcastEvent(BroadcastifyCallBroadcaster.this,
+                                                            BroadcastEvent.Event.BROADCASTER_STREAMED_COUNT_CHANGE));
+                                                    }
+
+                                                    audioRecording.removePendingReplay();
+                                                });
+                                        }
+                                        else
+                                        {
+                                            //Register an error for the file not found exception
+                                            mLog.error("Broadcastify calls API - upload file not found [" +
+                                                audioRecording.getPath().toString() + "]");
+                                            incrementErrorAudioCount();
+                                            broadcast(new BroadcastEvent(BroadcastifyCallBroadcaster.this,
+                                                BroadcastEvent.Event.BROADCASTER_ERROR_COUNT_CHANGE));
+                                            audioRecording.removePendingReplay();
+                                        }
+                                    }
+                                    else if(urlResponse.startsWith("1 SKIPPED"))
+                                    {
+                                        //Broadcastify is telling us to skip audio upload - someone already uploaded it
+                                        audioRecording.removePendingReplay();
+                                    }
+                                    else
+                                    {
+                                        mLog.error("Broadcastify calls API upload URL request failed [" + urlResponse + "]");
+                                        setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
                                         incrementErrorAudioCount();
                                         broadcast(new BroadcastEvent(BroadcastifyCallBroadcaster.this,
                                             BroadcastEvent.Event.BROADCASTER_ERROR_COUNT_CHANGE));
                                         audioRecording.removePendingReplay();
                                     }
                                 }
-                                else if(urlResponse.startsWith("1 SKIPPED"))
-                                {
-                                    //Broadcastify is telling us to skip audio upload - someone already uploaded it
-                                    audioRecording.removePendingReplay();
-                                }
-                                else
-                                {
-                                    mLog.error("Broadcastify calls API upload URL request failed [" + urlResponse + "]");
-                                    setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
-                                    incrementErrorAudioCount();
-                                    broadcast(new BroadcastEvent(BroadcastifyCallBroadcaster.this,
-                                        BroadcastEvent.Event.BROADCASTER_ERROR_COUNT_CHANGE));
-                                    audioRecording.removePendingReplay();
-                                }
-                            }
-                        });
-                }
-                catch(Exception e)
-                {
-                    mLog.error("Unknown Error", e);
-                    setBroadcastState(BroadcastState.ERROR);
-                    incrementErrorAudioCount();
-                    broadcast(new BroadcastEvent(this, BroadcastEvent.Event.BROADCASTER_ERROR_COUNT_CHANGE));
-                    audioRecording.removePendingReplay();
+                            });
+                    }
+                    catch(Exception e)
+                    {
+                        mLog.error("Unknown Error", e);
+                        setBroadcastState(BroadcastState.ERROR);
+                        incrementErrorAudioCount();
+                        broadcast(new BroadcastEvent(this, BroadcastEvent.Event.BROADCASTER_ERROR_COUNT_CHANGE));
+                        audioRecording.removePendingReplay();
+                    }
                 }
             }
         }
@@ -445,25 +454,43 @@ public class BroadcastifyCallBroadcaster extends AbstractAudioBroadcaster<Broadc
     /**
      * Creates a formatted string with the TO identifiers or uses a default of zero (0)
      */
-    private static String getTo(AudioRecording audioRecording)
+    private static List<String> getTo(AudioRecording audioRecording, Boolean all)
     {
-        Identifier identifier = audioRecording.getIdentifierCollection().getToIdentifier();
-
-        if(identifier instanceof PatchGroupIdentifier patchGroupIdentifier)
+        List<Identifier> identifiers = new ArrayList<>();
+        if(all)
         {
-            return format(patchGroupIdentifier);
+            identifiers = audioRecording.getIdentifierCollection().getToIdentifiers();
         }
-        else if(identifier instanceof TalkgroupIdentifier talkgroupIdentifier)
+        else
         {
-            return String.valueOf(RadioReferenceDecoder.convertToRadioReferenceTalkgroup(talkgroupIdentifier.getValue(),
-                    talkgroupIdentifier.getProtocol()));
-        }
-        else if(identifier instanceof RadioIdentifier radioIdentifier)
-        {
-            return radioIdentifier.getValue().toString();
+            identifiers = List.of(audioRecording.getIdentifierCollection().getToIdentifier());
         }
 
-        return "0";
+        List<String> to = new ArrayList<>();
+
+        for(Identifier identifier: identifiers)
+        {        
+            if(identifier instanceof PatchGroupIdentifier patchGroupIdentifier)
+            {
+                to.add(format(patchGroupIdentifier));
+            }
+            else if(identifier instanceof TalkgroupIdentifier talkgroupIdentifier)
+            {
+                to.add(String.valueOf(RadioReferenceDecoder.convertToRadioReferenceTalkgroup(talkgroupIdentifier.getValue(),
+                        talkgroupIdentifier.getProtocol())));
+            }
+            else if(identifier instanceof RadioIdentifier radioIdentifier)
+            {
+                to.add(radioIdentifier.getValue().toString());
+            }
+        }
+
+        if(to.isEmpty())
+        {
+            to.add("0");
+        }
+
+        return to.stream().distinct().toList();
     }
 
     /**

@@ -156,6 +156,7 @@ public abstract class AbstractBroadcastEditor<T extends BroadcastConfiguration> 
         {
             mSaveButton = new Button("Save");
             mSaveButton.setDisable(true);
+            mSaveButton.setMinWidth(75);
             mSaveButton.setMaxWidth(Double.MAX_VALUE);
             mSaveButton.setOnAction(event -> save());
             mSaveButton.disableProperty().bind(modifiedProperty().not());
@@ -170,6 +171,7 @@ public abstract class AbstractBroadcastEditor<T extends BroadcastConfiguration> 
         {
             mResetButton = new Button("Reset");
             mResetButton.setDisable(true);
+            mResetButton.setMinWidth(75);
             mResetButton.setMaxWidth(Double.MAX_VALUE);
             mResetButton.setOnAction(event -> setItem(getItem()));
             mResetButton.disableProperty().bind(modifiedProperty().not());
