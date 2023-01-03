@@ -445,13 +445,15 @@ public class AliasList
 
                         if(toneSequence != null && toneSequence.hasTones())
                         {
+                            List<Alias> aliases = new ArrayList<>();
                             for(Map.Entry<ToneSequence,Alias> entry: mToneSequenceMap.entrySet())
                             {
                                 if(entry.getKey().isContainedIn(toneSequence))
                                 {
-                                    return toList(entry.getValue());
+                                    aliases.add(entry.getValue());
                                 }
                             }
+                            return aliases;
                         }
                     }
                     break;
