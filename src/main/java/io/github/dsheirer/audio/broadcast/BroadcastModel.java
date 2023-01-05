@@ -60,13 +60,14 @@ public class BroadcastModel extends AbstractTableModel implements Listener<Audio
     public static final int COLUMN_BROADCAST_SERVER_TYPE = 0;
     public static final int COLUMN_STREAM_NAME = 1;
     public static final int COLUMN_BROADCASTER_STATUS = 2;
-    public static final int COLUMN_BROADCASTER_QUEUE_SIZE = 3;
-    public static final int COLUMN_BROADCASTER_STREAMED_COUNT = 4;
-    public static final int COLUMN_BROADCASTER_AGED_OFF_COUNT = 5;
-    public static final int COLUMN_BROADCASTER_ERROR_COUNT = 6;
+    public static final int COLUMN_BROADCASTER_STATUS_ERROR = 3;
+    public static final int COLUMN_BROADCASTER_QUEUE_SIZE = 4;
+    public static final int COLUMN_BROADCASTER_STREAMED_COUNT = 5;
+    public static final int COLUMN_BROADCASTER_AGED_OFF_COUNT = 6;
+    public static final int COLUMN_BROADCASTER_ERROR_COUNT = 7;
 
     public static final String[] COLUMN_NAMES = new String[]
-        {"Stream Type", "Name", "Status", "Queued", "Streamed/Uploaded", "Aged Off", "Upload Error"};
+        {"Stream Type", "Name", "Status", "Last Error", "Queued", "Streamed/Uploaded", "Aged Off", "Upload Error"};
 
     private ObservableList<ConfiguredBroadcast> mConfiguredBroadcasts =
         FXCollections.observableArrayList(ConfiguredBroadcast.extractor());
@@ -523,6 +524,7 @@ public class BroadcastModel extends AbstractTableModel implements Listener<Audio
                     if(row >= 0)
                     {
                         fireTableCellUpdated(row, COLUMN_BROADCASTER_STATUS);
+                        fireTableCellUpdated(row, COLUMN_BROADCASTER_STATUS_ERROR);
                     }
                     break;
                 case BROADCASTER_STREAMED_COUNT_CHANGE:
@@ -595,6 +597,12 @@ public class BroadcastModel extends AbstractTableModel implements Listener<Audio
                             {
                                 return BroadcastState.ERROR;
                             }
+                        case COLUMN_BROADCASTER_STATUS_ERROR:
+                            if(configuredBroadcast.hasAudioBroadcaster())
+                            {
+                                return configuredBroadcast.getAudioBroadcaster().getLastBadBroadcastState();
+                            }
+                            break;
                         case COLUMN_BROADCASTER_QUEUE_SIZE:
                             if(configuredBroadcast.hasAudioBroadcaster())
                             {
